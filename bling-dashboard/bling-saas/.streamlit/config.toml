@@ -1,8 +1,10 @@
+[client]
+serverAddress = "souztech.com"
+
 [server]
 headless = true
 port = 8501
 enableXsrfProtection = true
-baseUrlPath = ""
 
 [theme]
 primaryColor = "#00CC96"
