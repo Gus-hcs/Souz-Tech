@@ -1,206 +1,45 @@
 from __future__ import annotations
 
+from io import BytesIO
+
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
 from services.analytics_service import (
-    build_finance_kpis,
-    build_inventory_kpis,
-    build_sales_kpis,
+    build_commander_kpis,
+    build_inventory_intelligence,
+    build_sales_performance,
     generate_mock_data,
 )
 from services.auth_service import logout
 from services.bling_service import BlingAuthError, ensure_valid_token
 
 
-def render_sales_view() -> None:
+def _apply_dark_layout(fig, title: str | None = None):
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": "#E0E0E0"},
+        margin=dict(l=20, r=20, t=40, b=20),
+        title=title or "",
+    )
+    return fig
+
+
+def _kpi_card(title: str, value: str, delta: str, delta_class: str) -> None:
     st.markdown(
-        """
-        <style>
-        .metric-card {
-            background-color: #1E1E1E;
-            border: 1px solid #333;
-            border-radius: 8px;
-            padding: 20px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-            margin-bottom: 15px;
-        }
-        .metric-title {
-            color: #A0A0A0;
-            font-size: 14px;
-            font-weight: 500;
-            margin-bottom: 5px;
-        }
-        .metric-value {
-            color: #FFFFFF;
-            font-size: 28px;
-            font-weight: bold;
-        }
-        .metric-delta {
-            font-size: 14px;
-            font-weight: bold;
-        }
-        .positive { color: #00CC96; }
-        .negative { color: #EF553B; }
-        </style>
+        f"""
+        <div class="metric-card">
+            <div class="metric-title">{title}</div>
+            <div class="metric-value">{value}</div>
+            <div class="metric-delta {delta_class}">{delta}</div>
+        </div>
         """,
         unsafe_allow_html=True,
     )
-
-    receita_total = 1960560.20
-    mom_delta = 0.12
-    yoy_delta = 0.34
-    ticket_medio = 215.90
-    conversao = 0.084
-
-    kpi_cols = st.columns(3)
-    with kpi_cols[0]:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-title">Receita Total</div>
-                <div class="metric-value">R$ {receita_total:,.2f}</div>
-                <div class="metric-delta positive">↑ {mom_delta*100:.1f}% MoM • ↑ {yoy_delta*100:.1f}% YoY</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with kpi_cols[1]:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-title">Ticket Médio</div>
-                <div class="metric-value">R$ {ticket_medio:,.2f}</div>
-                <div class="metric-delta positive">↑ Consistência mensal</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with kpi_cols[2]:
-        st.markdown(
-            f"""
-            <div class="metric-card">
-                <div class="metric-title">Taxa de Conversão</div>
-                <div class="metric-value">{conversao*100:.1f}%</div>
-                <div class="metric-delta positive">↑ Leads qualificados</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    row2 = st.columns([1, 2])
-    with row2[0]:
-        fig_gauge = go.Figure(
-            go.Indicator(
-                mode="gauge+number+delta",
-                value=75000,
-                delta={"reference": 100000, "increasing": {"color": "#00CC96"}},
-                gauge={"axis": {"range": [0, 100000]}, "bar": {"color": "#2563EB"}},
-                title={"text": "Vendas vs Meta"},
-            )
-        )
-        fig_gauge.update_layout(
-            template="plotly_dark",
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font={"color": "#E0E0E0"},
-            margin=dict(l=20, r=20, t=40, b=20),
-        )
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.plotly_chart(fig_gauge, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    with row2[1]:
-        ticket_df = px.data.tips()
-        ticket_df = ticket_df.groupby("day")["total_bill"].mean().reset_index()
-        ticket_df = ticket_df.rename(columns={"day": "canal", "total_bill": "ticket"})
-        ticket_df["canal"] = ["Mercado Livre", "Shopee", "Site Próprio", "Outros"][: len(ticket_df)]
-        fig_ticket = px.bar(ticket_df, x="canal", y="ticket", template="plotly_dark")
-        fig_ticket.update_layout(
-            title="Ticket Médio por Canal",
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font={"color": "#E0E0E0"},
-            margin=dict(l=20, r=20, t=40, b=20),
-        )
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.plotly_chart(fig_ticket, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    row3 = st.columns([1, 1])
-    with row3[0]:
-        funnel_df = px.data.tips()
-        funnel_df = funnel_df.head(4)
-        funnel_df["stage"] = [
-            "Orçamentos Criados",
-            "Em Negociação",
-            "Aguardando Pagamento",
-            "Pedido Faturado",
-        ]
-        funnel_df["value"] = [1200, 860, 540, 420]
-        fig_funnel = px.funnel(funnel_df, x="value", y="stage", template="plotly_dark")
-        fig_funnel.update_layout(
-            title="Funil de Vendas",
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font={"color": "#E0E0E0"},
-            margin=dict(l=20, r=20, t=40, b=20),
-        )
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.plotly_chart(fig_funnel, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    with row3[1]:
-        map_df = px.data.gapminder().query("year == 2007")
-        map_df = map_df[map_df["continent"] == "Americas"].head(10)
-        map_df = map_df.assign(
-            state=["SP", "RJ", "MG", "PR", "RS", "SC", "BA", "GO", "PE", "CE"],
-            lat=[-23.5, -22.9, -19.9, -25.4, -30.0, -27.6, -12.9, -16.6, -8.0, -3.7],
-            lon=[-46.6, -43.2, -43.9, -49.3, -51.2, -48.5, -38.5, -49.3, -34.9, -38.5],
-            sales=[120, 95, 80, 70, 65, 60, 55, 50, 45, 40],
-        )
-        fig_map = px.scatter_geo(
-            map_df,
-            lat="lat",
-            lon="lon",
-            size="sales",
-            hover_name="state",
-            scope="south america",
-            template="plotly_dark",
-        )
-        fig_map.update_layout(
-            title="Vendas por Estado",
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font={"color": "#E0E0E0"},
-            margin=dict(l=20, r=20, t=40, b=20),
-        )
-        st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-        st.plotly_chart(fig_map, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    st.markdown('<div class="metric-card">', unsafe_allow_html=True)
-    st.markdown("**Top 10 Produtos (Pareto)**")
-    top_products = {
-        "Produto": [f"Produto {i}" for i in range(1, 11)],
-        "Receita Gerada": [98000, 86000, 74000, 62000, 54000, 48000, 42000, 36000, 32000, 28000],
-    }
-    top_df = px.data.tips().head(10)
-    top_df = top_df.assign(**top_products)
-    st.dataframe(
-        top_df[["Produto", "Receita Gerada"]],
-        width="stretch",
-        column_config={
-            "Receita Gerada": st.column_config.ProgressColumn(
-                "Receita Gerada",
-                min_value=0,
-                max_value=max(top_products["Receita Gerada"]),
-                format="R$ %d",
-            )
-        },
-    )
-    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def render_client(session, client) -> None:
@@ -208,8 +47,34 @@ def render_client(session, client) -> None:
         """
         <style>
             #MainMenu, footer, header {visibility: hidden;}
-            div[data-testid="stAppViewContainer"] {background: #0f1115; color: #E0E0E0;}
+            div[data-testid="stAppViewContainer"] {background: #0E1117; color: #FAFAFA;}
             section.main {padding-top: 1rem;}
+            .metric-card {
+                background-color: #1E1E1E;
+                border: 1px solid #333;
+                border-radius: 8px;
+                padding: 20px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+                margin-bottom: 15px;
+            }
+            .metric-title {
+                color: #A0A0A0;
+                font-size: 14px;
+                font-weight: 500;
+                margin-bottom: 5px;
+            }
+            .metric-value {
+                color: #FFFFFF;
+                font-size: 28px;
+                font-weight: bold;
+            }
+            .metric-delta {
+                font-size: 14px;
+                font-weight: bold;
+            }
+            .positive { color: #00CC96; }
+            .negative { color: #EF553B; }
+            .warning { color: #F59E0B; }
             .card {
                 background: #1E1E1E;
                 border-radius: 12px;
@@ -217,23 +82,6 @@ def render_client(session, client) -> None:
                 border: 1px solid #2A2A2A;
                 box-shadow: 0 4px 10px rgba(0,0,0,0.4);
                 margin-bottom: 20px;
-            }
-            .kpi-title {
-                font-size: 0.85rem;
-                color: #A0A0A0;
-                margin-bottom: 6px;
-                text-transform: uppercase;
-                letter-spacing: 0.04em;
-            }
-            .kpi-value {
-                font-size: 1.8rem;
-                font-weight: 700;
-                color: #E0E0E0;
-            }
-            .kpi-delta {
-                font-size: 0.85rem;
-                color: #10B981;
-                margin-top: 6px;
             }
             .section-title {
                 font-size: 1.1rem;
@@ -245,7 +93,8 @@ def render_client(session, client) -> None:
         """,
         unsafe_allow_html=True,
     )
-    st.title("Dashboard do Cliente")
+
+    st.title("Centro de Comando")
 
     if st.button("Sair"):
         logout()
@@ -261,95 +110,274 @@ def render_client(session, client) -> None:
         st.error("Token Bling expirado. Contate o suporte para reautenticar.")
 
     st.write(f"Loja: **{client.company_name}**")
+    active_modules = []
+    if client.access_commander:
+        active_modules.append("🏠")
+    if client.access_inventory:
+        active_modules.append("📦")
+    if client.access_performance:
+        active_modules.append("💰")
+    st.caption("Módulos: " + (" ".join(active_modules) if active_modules else "Nenhum módulo habilitado"))
 
-    orders_df, stock_df, ar_df, ap_df = generate_mock_data()
-    sales_kpis = build_sales_kpis(orders_df)
-    inventory_kpis = build_inventory_kpis(stock_df, orders_df)
-    finance_kpis = build_finance_kpis(ar_df, ap_df)
+    orders_df, stock_df, products_df = generate_mock_data()
+    commander = build_commander_kpis(orders_df, products_df, stock_df)
+    inventory = build_inventory_intelligence(orders_df, products_df, stock_df)
+    sales_perf = build_sales_performance(orders_df, products_df)
 
-    tabs = []
-    tab_keys = []
-    if client.plan_sales:
-        tabs.append("Vendas")
-        tab_keys.append("sales")
-    if client.plan_inventory:
-        tabs.append("Estoque")
-        tab_keys.append("inventory")
-    if client.plan_financial:
-        tabs.append("Financeiro")
-        tab_keys.append("financial")
+    modules: list[tuple[str, str]] = []
+    if client.access_commander:
+        modules.append(("🏠 Visão do Comandante", "commander"))
+    if client.access_inventory:
+        modules.append(("📦 Inteligência de Estoque", "inventory"))
+    if client.access_performance:
+        modules.append(("💰 Performance de Vendas", "performance"))
 
-    if not tabs:
-        st.info("Este módulo não está incluso no seu plano. Contate o suporte para upgrade.")
+    if not modules:
+        st.warning("Sua conta está ativa, mas nenhum módulo foi habilitado. Contate o suporte.")
         return
 
-    tab_objs = st.tabs(tabs)
-    for index, key in enumerate(tab_keys):
-        with tab_objs[index]:
-            if key == "sales":
-                render_sales_view()
-            elif key == "inventory":
-                st.subheader("Supply Chain")
-                if inventory_kpis.get("empty"):
-                    st.info("Dados insuficientes para calcular este indicador.")
-                    continue
-                st.markdown(
-                    f"""
-                    <div class="card">
-                        <div class="kpi-title">Valor em Estoque (Custo)</div>
-                        <div class="kpi-value">R$ {inventory_kpis['stock_value']:,.2f}</div>
-                        <div class="kpi-delta">Capital imobilizado</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
+    tabs = st.tabs([title for title, _ in modules])
+
+    for tab, (_, key) in zip(tabs, modules):
+        with tab:
+            if key == "commander":
+                delta_class = "positive" if commander["delta"] >= 0 else "negative"
+                kpi_cols = st.columns(4)
+                with kpi_cols[0]:
+                    _kpi_card(
+                        "Faturamento (30d)",
+                        f"R$ {commander['revenue_30']:,.2f}",
+                        f"{'↑' if commander['delta'] >= 0 else '↓'} {abs(commander['delta']):.1f}% vs período anterior",
+                        delta_class,
+                    )
+                with kpi_cols[1]:
+                    _kpi_card("Ticket Médio", f"R$ {commander['ticket']:,.2f}", "Consistência de vendas", "positive")
+                with kpi_cols[2]:
+                    _kpi_card(
+                        "Lucro Bruto (Estimado)",
+                        f"R$ {commander['gross_profit']:,.2f}",
+                        "Margem sobre custos",
+                        "positive",
+                    )
+                with kpi_cols[3]:
+                    _kpi_card(
+                        "Pedidos Travados",
+                        f"{commander['locked']}",
+                        "Atenção imediata",
+                        "warning",
+                    )
+
+                # Gráfico de barras + linha (últimos 90 dias)
+                daily = commander["daily"].copy()
+                
+                fig = go.Figure()
+                
+                # Adicionar barras (faturamento atual)
+                fig.add_trace(go.Bar(
+                    x=daily["date"],
+                    y=daily["revenue_current"],
+                    name="Faturamento Atual",
+                    marker_color="#00CC96",
+                    opacity=0.8,
+                ))
+                
+                # Adicionar linha (faturamento do mesmo dia no mês anterior)
+                fig.add_trace(go.Scatter(
+                    x=daily["date"],
+                    y=daily["revenue_prev"],
+                    name="Mesmo Dia (90 dias atrás)",
+                    mode="lines",
+                    line=dict(color="#F59E0B", width=2, dash="dash"),
+                    yaxis="y2",
+                ))
+                
+                # Configurar layout com dois eixos Y
+                fig.update_layout(
+                    template="plotly_dark",
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    title=dict(text="Faturamento Diário (Últimos 90 dias)", font=dict(color="#E0E0E0", size=16)),
+                    xaxis=dict(
+                        title="Data",
+                        gridcolor="#2A2A2A",
+                        color="#E0E0E0",
+                    ),
+                    yaxis=dict(
+                        title="Faturamento Atual (R$)",
+                        gridcolor="#2A2A2A",
+                        color="#E0E0E0",
+                    ),
+                    yaxis2=dict(
+                        title="Comparação (R$)",
+                        overlaying="y",
+                        side="right",
+                        color="#F59E0B",
+                    ),
+                    legend=dict(
+                        orientation="h",
+                        yanchor="bottom",
+                        y=1.02,
+                        xanchor="right",
+                        x=1,
+                        font=dict(color="#E0E0E0"),
+                    ),
+                    hovermode="x unified",
                 )
-                grid = st.columns(2)
-                with grid[0]:
-                    st.markdown('<div class="card">', unsafe_allow_html=True)
-                    st.markdown('<div class="section-title">Risco de Ruptura</div>', unsafe_allow_html=True)
-                    st.dataframe(inventory_kpis["rupture"], width="stretch")
-                    st.markdown('</div>', unsafe_allow_html=True)
-                with grid[1]:
-                    st.markdown('<div class="card">', unsafe_allow_html=True)
-                    st.markdown('<div class="section-title">Estoque Morto</div>', unsafe_allow_html=True)
-                    st.dataframe(inventory_kpis["dead_stock"], width="stretch")
-                    st.markdown('</div>', unsafe_allow_html=True)
+                
                 st.markdown('<div class="card">', unsafe_allow_html=True)
-                st.markdown('<div class="section-title">Curva ABC</div>', unsafe_allow_html=True)
-                st.dataframe(inventory_kpis["abc"], width="stretch")
+                st.plotly_chart(fig, width='stretch', key='chart_daily_revenue')
                 st.markdown('</div>', unsafe_allow_html=True)
-            elif key == "financial":
-                st.subheader("Financeiro")
-                if finance_kpis.get("empty"):
-                    st.info("Dados insuficientes para calcular este indicador.")
-                    continue
-                st.markdown(
-                    f"""
-                    <div class="card">
-                        <div class="kpi-title">Inadimplência</div>
-                        <div class="kpi-value">{finance_kpis['inadimplencia']:.1f}%</div>
-                        <div class="kpi-delta">Últimos vencimentos</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                projected = finance_kpis["projected"]
-                if not projected.empty:
-                    fig_cash = px.bar(
-                        projected,
-                        x="due_date",
-                        y="amount",
-                        color="type",
-                        template="plotly_dark",
-                        barmode="group",
-                    )
-                    fig_cash.update_layout(
-                        title="Fluxo de Caixa Projetado",
-                        margin=dict(l=0, r=0, t=40, b=0),
-                        paper_bgcolor="rgba(0,0,0,0)",
-                        plot_bgcolor="rgba(0,0,0,0)",
-                        font_color="#E0E0E0",
-                    )
+
+                # Alertas e Relatório de Pedidos Travados
+                col_alert1, col_alert2 = st.columns(2)
+                
+                with col_alert1:
+                    if commander["rupture_count"] > 0:
+                        st.error(f"🚨 {commander['rupture_count']} produtos principais acabam essa semana.")
+                
+                with col_alert2:
+                    if commander["dead_value"] > 0:
+                        st.warning(f"⚠️ R$ {commander['dead_value']:,.2f} parados no estoque.")
+                
+                # Botão e relatório de pedidos travados
+                if commander["locked"] > 0:
                     st.markdown('<div class="card">', unsafe_allow_html=True)
-                    st.plotly_chart(fig_cash, use_container_width=True)
+                    st.markdown('<div class="section-title">⚠️ Pedidos Travados - Atenção Imediata</div>', unsafe_allow_html=True)
+                    
+                    with st.expander(f"📋 Ver Relatório Detalhado ({commander['locked']} pedidos)", expanded=False):
+                        locked_details = commander["locked_details"].copy()
+                        
+                        # Formatar dados para exibição
+                        locked_details["created_at"] = pd.to_datetime(locked_details["created_at"]).dt.strftime("%d/%m/%Y")
+                        locked_details = locked_details.rename(columns={
+                            "order_id": "Nº Pedido",
+                            "total": "Valor (R$)",
+                            "status": "Status",
+                            "created_at": "Data",
+                        })
+                        
+                        # Calcular total
+                        total_travado = locked_details["Valor (R$)"].sum()
+                        
+                        st.dataframe(
+                            locked_details,
+                            width="stretch",
+                            column_config={
+                                "Valor (R$)": st.column_config.NumberColumn(format="R$ %.2f"),
+                            },
+                        )
+                        
+                        st.metric("💰 Valor Total Travado", f"R$ {total_travado:,.2f}")
+                        
+                        # Botão de download Excel
+                        buffer = BytesIO()
+                        with buffer:
+                            locked_details.to_excel(buffer, index=False, sheet_name="Pedidos Travados", engine="openpyxl")
+                            buffer.seek(0)
+                            st.download_button(
+                                label="📥 Baixar Relatório em Excel",
+                                data=buffer,
+                                file_name="pedidos_travados.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            )
+                    
                     st.markdown('</div>', unsafe_allow_html=True)
+
+            elif key == "inventory":
+                _kpi_card("% de Ruptura", f"{inventory['rupture_pct']:.1f}%", "SKUs ativos sem saldo", "warning")
+
+                purchase = inventory["purchase_table"].copy()
+                purchase = purchase[["sku", "product_name", "saldo", "daily_qty", "coverage_days", "status"]]
+                purchase = purchase.rename(
+                    columns={
+                        "sku": "SKU",
+                        "product_name": "Nome",
+                        "saldo": "Estoque Atual",
+                        "daily_qty": "Giro Diário",
+                        "coverage_days": "Dias de Cobertura",
+                        "status": "Status",
+                    }
+                )
+                st.markdown('<div class="card">', unsafe_allow_html=True)
+                st.markdown('<div class="section-title">Sugestão de Compra</div>', unsafe_allow_html=True)
+                
+                # Botão de download Excel
+                buffer = BytesIO()
+                with buffer:
+                    purchase.to_excel(buffer, index=False, sheet_name="Lista de Reposição", engine="openpyxl")
+                    buffer.seek(0)
+                    st.download_button(
+                        label="📥 Baixar Lista de Reposição em Excel",
+                        data=buffer,
+                        file_name="lista_reposicao.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+
+                    )
+                
+                st.dataframe(
+                    purchase,
+                    width="stretch",
+                    column_config={
+                        "Dias de Cobertura": st.column_config.NumberColumn(format="%.1f"),
+                        "Giro Diário": st.column_config.NumberColumn(format="%.2f"),
+                    },
+                )
+                st.markdown('</div>', unsafe_allow_html=True)
+
+                scatter = inventory["scatter"].copy()
+                fig_scatter = px.scatter(
+                    scatter,
+                    x="days_without_sale",
+                    y="stock_value",
+                    color="abc",
+                    hover_name="product_name",
+                    color_discrete_map={"A": "#10B981", "B": "#F59E0B", "C": "#EF4444"},
+                )
+                fig_scatter = _apply_dark_layout(fig_scatter, "Curva ABC vs Estoque (Cemitério no quadrante superior direito)")
+                st.markdown('<div class="card">', unsafe_allow_html=True)
+                st.plotly_chart(fig_scatter, width='stretch', key='chart_abc_scatter')
+                st.markdown('</div>', unsafe_allow_html=True)
+
+            elif key == "performance":
+                share = sales_perf["share"]
+                fig_share = px.pie(share, values="revenue", names="channel", hole=0.5)
+                fig_share = _apply_dark_layout(fig_share, "Share de Canais")
+                st.markdown('<div class="card">', unsafe_allow_html=True)
+                st.plotly_chart(fig_share, width='stretch', key='chart_channel_share')
+                st.markdown('</div>', unsafe_allow_html=True)
+
+                recurrence = sales_perf["recurrence"]
+                fig_rec = px.bar(recurrence, x="date", y="revenue", color="customer_type", barmode="stack")
+                fig_rec = _apply_dark_layout(fig_rec, "Cohort Diário: Novos vs Recorrentes")
+                st.markdown('<div class="card">', unsafe_allow_html=True)
+                st.plotly_chart(fig_rec, width='stretch', key='chart_recurrence')
+                st.markdown('</div>', unsafe_allow_html=True)
+
+                top_margin = sales_perf["top_margin"].copy()
+                # Verificar se product_name existe, senão usar sku
+                if "product_name" not in top_margin.columns:
+                    if "sku" in top_margin.columns:
+                        top_margin["product_name"] = top_margin["sku"]
+                    else:
+                        top_margin["product_name"] = "N/A"
+                
+                top_margin = top_margin[["product_name", "qty_sold", "revenue", "margin"]]
+                top_margin = top_margin.rename(
+                    columns={
+                        "product_name": "Produto",
+                        "qty_sold": "Qtd Vendida",
+                        "revenue": "Faturamento",
+                        "margin": "Lucro Real",
+                    }
+                )
+                st.markdown('<div class="card">', unsafe_allow_html=True)
+                st.markdown('<div class="section-title">Top Produtos por Margem</div>', unsafe_allow_html=True)
+                st.dataframe(
+                    top_margin,
+                    width="stretch",
+                    column_config={
+                        "Faturamento": st.column_config.NumberColumn(format="R$ %.2f"),
+                        "Lucro Real": st.column_config.NumberColumn(format="R$ %.2f"),
+                    },
+                )
+            st.markdown('</div>', unsafe_allow_html=True)

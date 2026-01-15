@@ -32,11 +32,10 @@ class Client(Base):
     refresh_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     token_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    plan_sales: Mapped[bool] = mapped_column(Boolean, default=False)
-    plan_inventory: Mapped[bool] = mapped_column(Boolean, default=False)
-    plan_financial: Mapped[bool] = mapped_column(Boolean, default=False)
-
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    access_commander: Mapped[bool] = mapped_column(Boolean, default=True)
+    access_inventory: Mapped[bool] = mapped_column(Boolean, default=False)
+    access_performance: Mapped[bool] = mapped_column(Boolean, default=False)
     last_login: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     login_count: Mapped[int] = mapped_column(Integer, default=0)
 
