@@ -1,0 +1,9 @@
+streamlit
+pandas
+duckdb
+sqlalchemy
+bcrypt
+requests
+python-dotenv
+pytz
+plotly
