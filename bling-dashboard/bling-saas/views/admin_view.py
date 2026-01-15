@@ -72,19 +72,34 @@ def render_admin(session) -> None:
             token_validos = sum(1 for c in clients if token_status(c) == "Valid")
             token_exp = total - token_validos
 
-            st.markdown('<div class="metric-grid">', unsafe_allow_html=True)
-            for title, value in [
-                ("Clientes", total),
-                ("Ativos", ativos),
-                ("Inativos", inativos),
-                ("Tokens Válidos", token_validos),
-                ("Tokens Pendentes/Exp.", token_exp),
-            ]:
-                st.markdown(
-                    f"<div class='metric'><div class='metric-title'>{title}</div><div class='metric-value'>{value}</div></div>",
-                    unsafe_allow_html=True,
-                )
-            st.markdown('</div>', unsafe_allow_html=True)
+            # Cards lado a lado usando st.columns
+            col1, col2, col3, col4, col5 = st.columns(5)
+            
+            metrics = [
+                (col1, "Clientes", total, "#00CC96"),
+                (col2, "Ativos", ativos, "#34d399"),
+                (col3, "Inativos", inativos, "#f87171"),
+                (col4, "Tokens Válidos", token_validos, "#60a5fa"),
+                (col5, "Tokens Pend./Exp.", token_exp, "#fbbf24"),
+            ]
+            
+            for col, title, value, color in metrics:
+                with col:
+                    st.markdown(
+                        f"""
+                        <div style="
+                            background: linear-gradient(135deg, #111827 0%, #0f172a 100%);
+                            border: 1px solid #1f2937;
+                            border-radius: 10px;
+                            padding: 1rem 1.2rem;
+                            text-align: center;
+                        ">
+                            <div style="color: #9ca3af; font-size: 0.85rem; margin-bottom: 0.3rem;">{title}</div>
+                            <div style="color: {color}; font-size: 1.8rem; font-weight: 700;">{value}</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
 
             filtro = st.text_input("Filtrar por nome ou login", key="overview_filter")
             filtered = [
